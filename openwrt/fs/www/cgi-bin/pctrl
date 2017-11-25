@@ -1,0 +1,14 @@
+#!/bin/sh
+echo "Content-type: text/html"
+echo ""
+echo "CGI: Projector Controller"
+
+command=$(echo $(echo $PATH_INFO | tr '/' ' ')  | cut -f1 -d' ')
+action=$(echo $(echo $PATH_INFO | tr '/' ' ')  | cut -f2 -d' ')
+
+echo "CGI: Parsed: command/$command, action/$action"
+
+echo "CGI: Executing external script"
+
+# Execute external control script
+/root/pctrl.sh $command $action
