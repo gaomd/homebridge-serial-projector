@@ -12,6 +12,8 @@ function SerialProjector(log, config) {
   this.log = log;
   this.name = config.name || 'Projector';
   this.ip = config.ip;
+  this.currentExecutionDelay = 0;
+  this.remoteTimeout = 5000;
 
   if (!this.ip) {
     throw new Error('IP address required for ' + this.name);
@@ -21,6 +23,16 @@ function SerialProjector(log, config) {
 }
 
 SerialProjector.prototype = {
+  queueExecution: function (callback) {
+    let app = this;
+    this.log.debug('Queue for ' + (app.currentExecutionDelay + app.remoteTimeout) + ' ms.');
+    setTimeout(function () {
+      app.currentExecutionDelay -= app.remoteTimeout;
+      app.log.debug('Executing queued function, remaining delay ' + app.currentExecutionDelay + ' ms.');
+      callback.bind(app)();
+    }, (app.currentExecutionDelay += app.remoteTimeout));
+  },
+
   remote: function (controlType, targetState) {
     controlType = controlType.toLowerCase();
     targetState = targetState.toLowerCase();
@@ -59,72 +71,84 @@ SerialProjector.prototype = {
   },
 
   getPowerState: function (callback) {
-    let power = this.remote('pow', 'status');
+    this.queueExecution(function () {
+      let power = this.remote('pow', 'status');
 
-    if (power === false) {
-      callback(new Error('Failed to get power state of ' + this.name));
-      return;
-    }
+      if (power === false) {
+        callback(new Error('Failed to get power state of ' + this.name));
+        return;
+      }
 
-    callback(null, (power === 'on'));
+      callback(null, (power === 'on'));
+    });
   },
 
   getSpeakerState: function (callback) {
-    let mute = this.remote('mute', 'status');
+    this.queueExecution(function () {
+      let mute = this.remote('mute', 'status');
 
-    if (mute === false) {
-      callback(new Error('Failed to get speaker state of ' + this.name));
-      return;
-    }
+      if (mute === false) {
+        callback(new Error('Failed to get speaker state of ' + this.name));
+        return;
+      }
 
-    callback(null, (mute === 'off'));
+      callback(null, (mute === 'off'));
+    });
   },
 
   getDisplayState: function (callback) {
-    let blank = this.remote('blank', 'status');
+    this.queueExecution(function () {
+      let blank = this.remote('blank', 'status');
 
-    if (blank === false) {
-      callback(new Error('Failed to get display state of ' + this.name));
-      return;
-    }
+      if (blank === false) {
+        callback(new Error('Failed to get display state of ' + this.name));
+        return;
+      }
 
-    callback(null, (blank === 'off'));
+      callback(null, (blank === 'off'));
+    });
   },
 
   setPowerState: function (state, callback) {
-    let targetState = (state === true) ? 'on' : 'off';
-    let res = this.remote('pow', targetState);
+    this.queueExecution(function () {
+      let targetState = (state === true) ? 'on' : 'off';
+      let res = this.remote('pow', targetState);
 
-    if (res === false) {
-      callback(new Error('Failed to set power state of ' + this.name + ' to ', targetState));
-      return;
-    }
+      if (res === false) {
+        callback(new Error('Failed to set power state of ' + this.name + ' to ', targetState));
+        return;
+      }
 
-    callback();
+      callback();
+    });
   },
 
   setSpeakerState: function (state, callback) {
-    let targetState = (state === true) ? 'off' : 'on';
-    let res = this.remote('mute', targetState);
+    this.queueExecution(function () {
+      let targetState = (state === true) ? 'off' : 'on';
+      let res = this.remote('mute', targetState);
 
-    if (res === false) {
-      callback(new Error('Failed to set speaker state of ' + this.name + ' to ' + targetState));
-      return;
-    }
+      if (res === false) {
+        callback(new Error('Failed to set speaker state of ' + this.name + ' to ' + targetState));
+        return;
+      }
 
-    callback();
+      callback();
+    });
   },
 
   setDisplayState: function (state, callback) {
-    let targetState = (state === true) ? 'off' : 'on';
-    let res = this.remote('blank', targetState);
+    this.queueExecution(function () {
+      let targetState = (state === true) ? 'off' : 'on';
+      let res = this.remote('blank', targetState);
 
-    if (res === false) {
-      callback(new Error('Failed to set display state of ' + this.name + ' to ', targetState));
-      return;
-    }
+      if (res === false) {
+        callback(new Error('Failed to set display state of ' + this.name + ' to ', targetState));
+        return;
+      }
 
-    callback();
+      callback();
+    });
   },
 
   identify: function (callback) {
