@@ -166,22 +166,19 @@ SerialProjector.prototype = {
     this.powerService
       .getCharacteristic(Characteristic.On)
       .on('get', this.getPowerState.bind(this))
-      .on('set', this.setPowerState.bind(this))
-      // .updateValue(this.getPowerState());
+      .on('set', this.setPowerState.bind(this));
 
     this.speakerService = new Service.Switch(this.name + ' Speaker', 'speaker');
     this.speakerService
       .getCharacteristic(Characteristic.On)
       .on('get', this.getSpeakerState.bind(this))
-      .on('set', this.setSpeakerState.bind(this))
-      // .updateValue(this.getSpeakerState());
+      .on('set', this.setSpeakerState.bind(this));
 
     this.displayService = new Service.Switch(this.name + ' Display', 'display');
     this.displayService
       .getCharacteristic(Characteristic.On)
       .on('get', this.getDisplayState.bind(this))
-      .on('set', this.setDisplayState.bind(this))
-      // .updateValue(this.getDisplayState());
+      .on('set', this.setDisplayState.bind(this));
 
     return [this.informationService, this.powerService, this.speakerService, this.displayService];
   }
