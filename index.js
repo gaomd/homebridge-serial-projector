@@ -12,9 +12,9 @@ function SerialProjector(log, config) {
   this.log = log;
   this.name = config.name || 'Projector';
   this.ip = config.ip;
-  this.currentExecutionDelay = 0;
-  this.remoteTimeout = 5 * 1000;
   this.lastPowerState = null;
+  this.executionQueue = [];
+  this.queueInProcess = false;
 
   if (!this.ip) {
     throw new Error('IP address required for ' + this.name);
@@ -24,15 +24,34 @@ function SerialProjector(log, config) {
 }
 
 SerialProjector.prototype = {
+  processQueue: function(inside = false) {
+    if (!this.executionQueue.length) {
+      return;
+    }
+
+    if (this.queueInProcess && !inside) {
+      return;
+    }
+
+    this.queueInProcess = true;
+
+    let job = this.executionQueue.shift();
+    job();
+
+    if (this.executionQueue.length) {
+      this.processQueue(inside);
+    } else {
+      this.queueInProcess = false;
+    }
+  },
+
   queueExecution: function (callback) {
     let app = this;
-    this.log.debug('Queue for ' + app.currentExecutionDelay + ' ms.');
-    setTimeout(function () {
-      app.currentExecutionDelay -= app.remoteTimeout;
-      app.log.debug('Executing queued function, remaining delay ' + app.currentExecutionDelay + ' ms.');
+    this.executionQueue.push(function () {
       callback.bind(app)();
-    }, app.currentExecutionDelay);
-    app.currentExecutionDelay += app.remoteTimeout;
+    });
+
+    this.processQueue();
   },
 
   remote: function (controlType, targetState) {
