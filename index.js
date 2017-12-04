@@ -13,7 +13,8 @@ function SerialProjector(log, config) {
   this.name = config.name || 'Projector';
   this.ip = config.ip;
   this.currentExecutionDelay = 0;
-  this.remoteTimeout = 5000;
+  this.remoteTimeout = 5 * 1000;
+  this.lastPowerState = null;
 
   if (!this.ip) {
     throw new Error('IP address required for ' + this.name);
@@ -25,25 +26,26 @@ function SerialProjector(log, config) {
 SerialProjector.prototype = {
   queueExecution: function (callback) {
     let app = this;
-    this.log.debug('Queue for ' + (app.currentExecutionDelay + app.remoteTimeout) + ' ms.');
+    this.log.debug('Queue for ' + app.currentExecutionDelay + ' ms.');
     setTimeout(function () {
       app.currentExecutionDelay -= app.remoteTimeout;
       app.log.debug('Executing queued function, remaining delay ' + app.currentExecutionDelay + ' ms.');
       callback.bind(app)();
-    }, (app.currentExecutionDelay += app.remoteTimeout));
+    }, app.currentExecutionDelay);
+    app.currentExecutionDelay += app.remoteTimeout;
   },
 
   remote: function (controlType, targetState) {
     controlType = controlType.toLowerCase();
     targetState = targetState.toLowerCase();
 
-    if (['pow', 'mute', 'blank'].includes(controlType) && ['on', 'off', 'status'].includes(targetState)) {
+    if (['pow', 'mute', 'blank'].includes(controlType) && ['on', 'off', '?'].includes(targetState)) {
       ;
     } else {
       return false;
     }
 
-    let url = 'http://' + this.ip + '/cgi-bin/pctrl/' + controlType + '/' + encodeURIComponent((targetState === 'status') ? '?' : targetState);
+    let url = 'http://' + this.ip + '/cgi-bin/pctrl/' + controlType + '/' + encodeURIComponent(targetState);
     let searchOnState = '*' + controlType.toUpperCase() + '=' + 'ON#';
     let searchOffState = '*' + controlType.toUpperCase() + '=' + 'OFF#';
     let searchAlreadyInTargetState = '*Block item#';
@@ -55,13 +57,19 @@ SerialProjector.prototype = {
     this.log.debug("Requesting " + url);
     this.log.debug(responseContent);
 
-    if (targetState === 'status') {
+    // Only the POW power state could be fetched when powered off,
+    // in case of fetch other control type states, return their WYSIWYG state
+    if (this.lastPowerState === false && ['mute', 'blank'].includes(controlType)) {
+      return 'on'
+    }
+
+    if (targetState === '?') {
       if ((foundOnState = responseContent.includes(searchOnState)) || responseContent.includes(searchOffState)) {
         return foundOnState ? 'on' : 'off';
       }
     }
 
-    if (targetState === 'on' || targetState === 'off') {
+    if (['on', 'off'].includes(targetState)) {
       if (responseContent.includes(targetState === 'on' ? searchOnState : searchOffState) || responseContent.includes(searchAlreadyInTargetState)) {
         return targetState;
       }
@@ -72,20 +80,22 @@ SerialProjector.prototype = {
 
   getPowerState: function (callback) {
     this.queueExecution(function () {
-      let power = this.remote('pow', 'status');
+      let power = this.remote('pow', '?');
 
       if (power === false) {
         callback(new Error('Failed to get power state of ' + this.name));
         return;
       }
 
-      callback(null, (power === 'on'));
+      this.lastPowerState = (power === 'on');
+
+      callback(null, this.lastPowerState);
     });
   },
 
   getSpeakerState: function (callback) {
     this.queueExecution(function () {
-      let mute = this.remote('mute', 'status');
+      let mute = this.remote('mute', '?');
 
       if (mute === false) {
         callback(new Error('Failed to get speaker state of ' + this.name));
@@ -98,7 +108,7 @@ SerialProjector.prototype = {
 
   getDisplayState: function (callback) {
     this.queueExecution(function () {
-      let blank = this.remote('blank', 'status');
+      let blank = this.remote('blank', '?');
 
       if (blank === false) {
         callback(new Error('Failed to get display state of ' + this.name));
