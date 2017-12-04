@@ -1,4 +1,4 @@
-let request = require('sync-request');
+let request = require('request');
 let Service, Characteristic;
 
 module.exports = function (homebridge) {
@@ -13,8 +13,8 @@ function SerialProjector(log, config) {
   this.name = config.name || 'Projector';
   this.ip = config.ip;
   this.lastPowerState = null;
-  this.executionQueue = [];
-  this.queueInProcess = false;
+  this.remoteQueue = [];
+  this.remoteQueueInProcess = false;
 
   if (!this.ip) {
     throw new Error('IP address required for ' + this.name);
@@ -24,44 +24,36 @@ function SerialProjector(log, config) {
 }
 
 SerialProjector.prototype = {
-  processQueue: function(inside = false) {
-    if (!this.executionQueue.length) {
+  dequeueNextRemote: function (initiator = false) {
+    if (!this.remoteQueue.length) {
+      this.remoteQueueInProcess = false;
       return;
     }
 
-    if (this.queueInProcess && !inside) {
+    if (this.remoteQueueInProcess && initiator) {
       return;
     }
 
-    this.queueInProcess = true;
+    this.remoteQueueInProcess = true;
 
-    let job = this.executionQueue.shift();
-    job();
-
-    if (this.executionQueue.length) {
-      this.processQueue(inside);
-    } else {
-      this.queueInProcess = false;
-    }
+    let job = this.remoteQueue.shift();
+    job(this.dequeueNextRemote.bind(this));
   },
 
-  queueExecution: function (callback) {
-    let app = this;
-    this.executionQueue.push(function () {
-      callback.bind(app)();
-    });
+  enqueueRemote: function (job) {
+    this.remoteQueue.push(job);
 
-    this.processQueue();
+    this.dequeueNextRemote(true);
   },
 
-  remote: function (controlType, targetState) {
+  remote: function (controlType, targetState, resultStateCallback) {
     controlType = controlType.toLowerCase();
     targetState = targetState.toLowerCase();
 
     if (['pow', 'mute', 'blank'].includes(controlType) && ['on', 'off', '?'].includes(targetState)) {
       ;
     } else {
-      return false;
+      return resultStateCallback(false);
     }
 
     let url = 'http://' + this.ip + '/cgi-bin/pctrl/' + controlType + '/' + encodeURIComponent(targetState);
@@ -70,80 +62,84 @@ SerialProjector.prototype = {
     let searchAlreadyInTargetState = '*Block item#';
     let foundOnState = false;
 
-    let response = request('GET', url);
-    let responseContent = response.getBody('utf-8');
-
-    this.log.debug("Requesting " + url);
-    this.log.debug(responseContent);
-
-    // Only the POW power state could be fetched when powered off,
-    // in case of fetch other control type states, return their WYSIWYG state
-    if (this.lastPowerState === false && ['mute', 'blank'].includes(controlType)) {
-      return 'on'
-    }
-
-    if (targetState === '?') {
-      if ((foundOnState = responseContent.includes(searchOnState)) || responseContent.includes(searchOffState)) {
-        return foundOnState ? 'on' : 'off';
+    this.enqueueRemote(function (next) {
+      // Only the state of POW power control type could be retrieved when powered off,
+      // for other control types, return the WYSIWYG state directly
+      if (this.lastPowerState === false && ['mute', 'blank'].includes(controlType)) {
+        this.log.debug('Device is powered off, response state directly');
+        resultStateCallback('on');
+        return next();
       }
-    }
 
-    if (['on', 'off'].includes(targetState)) {
-      if (responseContent.includes(targetState === 'on' ? searchOnState : searchOffState) || responseContent.includes(searchAlreadyInTargetState)) {
-        return targetState;
-      }
-    }
+      this.log.debug('Requesting ' + url);
+      request(url, function (error, response, body) {
+        if (error) {
+          resultStateCallback(false);
+          return next();
+        }
 
-    return false;
+        let responseContent = body;
+        this.log.debug('Response:\n' + responseContent);
+
+        if (targetState === '?') {
+          if ((foundOnState = responseContent.includes(searchOnState)) || responseContent.includes(searchOffState)) {
+            resultStateCallback((foundOnState ? 'on' : 'off'));
+            return next();
+          }
+        }
+
+        if (['on', 'off'].includes(targetState)) {
+          if (responseContent.includes(targetState === 'on' ? searchOnState : searchOffState) || responseContent.includes(searchAlreadyInTargetState)) {
+            resultStateCallback(targetState);
+            return next();
+          }
+        }
+
+        resultStateCallback(false);
+        return next();
+      }.bind(this));
+    }.bind(this));
   },
 
   getPowerState: function (callback) {
-    this.queueExecution(function () {
-      let power = this.remote('pow', '?');
-
-      if (power === false) {
+    this.remote('pow', '?', (resultPowerState) => {
+      if (resultPowerState === false) {
         callback(new Error('Failed to get power state of ' + this.name));
         return;
       }
 
-      this.lastPowerState = (power === 'on');
+      this.lastPowerState = (resultPowerState === 'on');
 
       callback(null, this.lastPowerState);
     });
   },
 
   getSpeakerState: function (callback) {
-    this.queueExecution(function () {
-      let mute = this.remote('mute', '?');
-
-      if (mute === false) {
+    this.remote('mute', '?', (resultMuteState) => {
+      if (resultMuteState === false) {
         callback(new Error('Failed to get speaker state of ' + this.name));
         return;
       }
 
-      callback(null, (mute === 'off'));
+      callback(null, (resultMuteState === 'off'));
     });
   },
 
   getDisplayState: function (callback) {
-    this.queueExecution(function () {
-      let blank = this.remote('blank', '?');
-
-      if (blank === false) {
+    this.remote('blank', '?', (resultBlankState) => {
+      if (resultBlankState === false) {
         callback(new Error('Failed to get display state of ' + this.name));
         return;
       }
 
-      callback(null, (blank === 'off'));
+      callback(null, (resultBlankState === 'off'));
     });
   },
 
   setPowerState: function (state, callback) {
-    this.queueExecution(function () {
-      let targetState = (state === true) ? 'on' : 'off';
-      let res = this.remote('pow', targetState);
-
-      if (res === false) {
+    let targetState = (state === true) ? 'on' : 'off';
+    this.remote('pow', targetState, (resultState) => {
+      if (resultState === false) {
         callback(new Error('Failed to set power state of ' + this.name + ' to ', targetState));
         return;
       }
@@ -153,11 +149,9 @@ SerialProjector.prototype = {
   },
 
   setSpeakerState: function (state, callback) {
-    this.queueExecution(function () {
-      let targetState = (state === true) ? 'off' : 'on';
-      let res = this.remote('mute', targetState);
-
-      if (res === false) {
+    let targetState = (state === true) ? 'off' : 'on';
+    this.remote('mute', targetState, (resultState) => {
+      if (resultState === false) {
         callback(new Error('Failed to set speaker state of ' + this.name + ' to ' + targetState));
         return;
       }
@@ -167,11 +161,9 @@ SerialProjector.prototype = {
   },
 
   setDisplayState: function (state, callback) {
-    this.queueExecution(function () {
-      let targetState = (state === true) ? 'off' : 'on';
-      let res = this.remote('blank', targetState);
-
-      if (res === false) {
+    let targetState = (state === true) ? 'off' : 'on';
+    this.remote('blank', targetState, (resultState) => {
+      if (resultState === false) {
         callback(new Error('Failed to set display state of ' + this.name + ' to ', targetState));
         return;
       }
