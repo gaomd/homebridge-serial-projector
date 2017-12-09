@@ -62,12 +62,15 @@ Refer to [Homebridge repo](https://github.com/nfarina/homebridge) for more detai
 
     {
         "bridge": {
-            Remove this line and refer to: https://github.com/nfarina/homebridge/blob/master/config-sample.json
+            "//0": "Remove this line and refer to: https://github.com/nfarina/homebridge/blob/master/config-sample.json"
         },
         "accessories": [
             {
                 "accessory": "SerialProjector",
-                "name": "TV",
+                "name": "TV",                           "//0": "required, default to TV (aka {name})",
+                "power_switch_name": "TV Power",        "//1": "optional, default to {name} Power",
+                "speaker_switch_name": "TV Speaker",    "//2": "optional, default to {name} Speaker",
+                "display_switch_name": "TV Display",    "//3": "optional, default to {name} Display",
                 "ip": "ip-of-openwrt, e.g. 192.168.1.123"
             }
         ]

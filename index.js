@@ -10,7 +10,10 @@ module.exports = function (homebridge) {
 
 function SerialProjector(log, config) {
   this.log = log;
-  this.name = config.name || 'Projector';
+  this.name = config.name || 'TV';
+  this.powerSwitchName = config.power_switch_name || `${this.name} Power`;
+  this.speakerSwitchName = config.speaker_switch_name || `${this.name} Speaker`;
+  this.displaySwitchName = config.display_switch_name || `${this.name} Display`;
   this.ip = config.ip;
   this.lastPowerState = null;
   this.remoteQueue = [];
@@ -183,23 +186,26 @@ SerialProjector.prototype = {
       .setCharacteristic(Characteristic.Model, 'W1070+')
       .setCharacteristic(Characteristic.SerialNumber, '1234567890123');
 
-    this.powerService = new Service.Switch(this.name, 'power');
+    this.powerService = new Service.Switch(this.powerSwitchName, 'power');
     this.powerService
       .getCharacteristic(Characteristic.On)
       .on('get', this.getPowerState.bind(this))
       .on('set', this.setPowerState.bind(this));
+    this.log.debug(`Initialized power switch: ${this.powerSwitchName}`);
 
-    this.speakerService = new Service.Switch(this.name + ' Speaker', 'speaker');
+    this.speakerService = new Service.Switch(this.speakerSwitchName, 'speaker');
     this.speakerService
       .getCharacteristic(Characteristic.On)
       .on('get', this.getSpeakerState.bind(this))
       .on('set', this.setSpeakerState.bind(this));
+    this.log.debug(`Initialized speaker switch: ${this.speakerSwitchName}`);
 
-    this.displayService = new Service.Switch(this.name + ' Display', 'display');
+    this.displayService = new Service.Switch(this.displaySwitchName, 'display');
     this.displayService
       .getCharacteristic(Characteristic.On)
       .on('get', this.getDisplayState.bind(this))
       .on('set', this.setDisplayState.bind(this));
+    this.log.debug(`Initialized display switch: ${this.displaySwitchName}`);
 
     return [this.informationService, this.powerService, this.speakerService, this.displayService];
   }
