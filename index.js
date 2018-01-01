@@ -1,6 +1,9 @@
 let request = require('request');
 let Service, Characteristic;
 
+const dgram = require('dgram');
+const socket = dgram.createSocket('udp4');
+
 module.exports = function (homebridge) {
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
@@ -14,19 +17,58 @@ function SerialProjector(log, config) {
   this.powerSwitchName = config.power_switch_name || `${this.name} Power`;
   this.speakerSwitchName = config.speaker_switch_name || `${this.name} Speaker`;
   this.displaySwitchName = config.display_switch_name || `${this.name} Display`;
-  this.ip = config.ip;
+  this.macAddress = config.mac_address ? config.mac_address.toLowerCase() : null;
+  this.ip = null;
   this.lastPowerState = null;
   this.remoteQueue = [];
   this.remoteQueueInProcess = false;
+  this.discoverIntervalSeconds = 30;
 
-  if (!this.ip) {
-    throw new Error('IP address required for ' + this.name);
+  if (!this.macAddress) {
+    throw new Error('MAC address required for ' + this.name);
   }
 
-  this.log.debug('Initialized [' + this.name + '] @ [', this.ip + ']');
+  this.log.debug('Initializing [' + this.name + '] @ [' + this.macAddress + ']');
+
+  this.listen();
+  this.discover();
+  setInterval(() => {
+    this.discover();
+  }, this.discoverIntervalSeconds * 1000);
 }
 
 SerialProjector.prototype = {
+  listen: function () {
+    socket.on('message', (message, rinfo) => {
+      this.log.debug(`Server got: ${message} from ${rinfo.address}:${rinfo.port}`);
+
+      message = message.toString('UTF-8').trim().toLowerCase();
+      if (!message || !message.startsWith('mac_address: ')) {
+        return;
+      }
+
+      const macAddress = message.replace('mac_address: ', '');
+      if (this.macAddress !== macAddress) {
+        return;
+      }
+
+      // Discovered
+      this.ip = rinfo.address;
+      this.log.debug(`Identified: ${this.macAddress} => ${this.ip}`);
+    });
+
+    socket.bind(2367, () => {
+      socket.addMembership('224.33.66.77');
+    });
+  },
+  discover: function () {
+    this.log.debug('Discovering...');
+    socket.send('discover', 2367, '224.33.66.77', (error) => {
+      if (error) {
+        return this.log.error('Error while discovering:', error);
+      }
+    });
+  },
   dequeueNextRemote: function (initiator = false) {
     if (!this.remoteQueue.length) {
       this.remoteQueueInProcess = false;

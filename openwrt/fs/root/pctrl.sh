@@ -22,7 +22,7 @@ echo -ne '\r' > /dev/ttyUSB0
 echo -ne "*$1=$2#" > /dev/ttyUSB0
 echo -ne '\r' > /dev/ttyUSB0
 
-# Wait for the projector to response, should be very quick
+# Waiting for the projector to respond, should be very quick
 sleep ${sleep}
 
 echo "---- OUTPUT ----"
